@@ -7,21 +7,7 @@ from app.schemas.data import UnifiedDataCreate
 from app.core import database
 import traceback
 
-# --- Setup ---
-@pytest.fixture(autouse=True)
-async def setup_db():
-    database.db_manager._engine = None 
-    database.db_manager._session_maker = None
-    
-    engine = database.db_manager.engine
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield
-    
-    await engine.dispose()
+# --- Setup handled by tests/conftest.py ---
 
 # --- Mocks ---
 async def mock_fetch_success():
