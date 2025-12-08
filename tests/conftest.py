@@ -3,7 +3,8 @@ import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core import database
-from app.db.models import Base
+# Explicitly import all models so they are registered with Base.metadata
+from app.db.models import Base, EtlCheckpoint, UnifiedData, RawData
 
 # 1. Session-Scoped Event Loop
 @pytest.fixture(scope="session")
@@ -32,6 +33,7 @@ async def init_db(db_engine):
     Creates tables before tests, drops them after.
     """
     async with db_engine.begin() as conn:
+        # Explicitly Create All Tables
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     
@@ -45,7 +47,6 @@ async def init_db(db_engine):
 async def patch_db_manager(db_engine):
     """
     Overrides the global db_manager to use the test session-scoped engine.
-    Also ensures clean data state (rollback/truncate) could be handled here if needed.
     """
     original_engine = database.db_manager._engine
     original_maker = database.db_manager._session_maker
