@@ -1,47 +1,59 @@
 import pytest
 import asyncio
-from typing import Generator, AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core import database
 from app.db.models import Base
 
-# Force session scope for event loop if needed, OR function scope. 
-# Common fix for "attached to different loop" is to ensure engine is created inside the loop context.
-@pytest.fixture(scope="function")
+# 1. Session-Scoped Event Loop
+# This overrides the default pytest-asyncio loop management to use a single loop for the whole session.
+# Crucial for resolving "Task attached to a different loop" errors.
+@pytest.fixture(scope="session")
 def event_loop():
-    """
-    Creates a fresh event loop for each test function.
-    """
-    loop = asyncio.new_event_loop()
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
-@pytest.fixture(scope="function", autouse=True)
-async def setup_test_db():
-    """
-    Overrides the global db_manager with a fresh engine/schema for each test.
-    """
-    # 1. Create a fresh engine for this test's loop
+# 2. Session-Scoped Engine
+# Created ONCE per session, attached to the session loop.
+@pytest.fixture(scope="session")
+async def db_engine():
     engine = create_async_engine(database.settings.DATABASE_URL, echo=False)
     
-    # 2. Monkeypatch the global manager
-    database.db_manager._engine = engine
-    database.db_manager._session_maker = sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-
-    # 3. Create Schema (Fresh DB)
+    # Initialize Schema
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    yield
-
-    # 4. Cleanup
+    yield engine
+    
     await engine.dispose()
-    database.db_manager._engine = None
-    database.db_manager._session_maker = None
+
+# 3. Function-Scoped Patch
+# Applies the session engine to the global db_manager for every test.
+# Cleans up data between tests.
+@pytest.fixture(scope="function", autouse=True)
+async def patch_db_manager(db_engine):
+    # Snapshot original state
+    original_engine = database.db_manager._engine
+    original_maker = database.db_manager._session_maker
+    
+    # Patch Global Manager
+    database.db_manager._engine = db_engine
+    database.db_manager._session_maker = sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    
+    yield
+    
+    # Cleanup Data (Truncate/Recreate)
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Restore State
+    database.db_manager._engine = original_engine
+    database.db_manager._session_maker = original_maker
