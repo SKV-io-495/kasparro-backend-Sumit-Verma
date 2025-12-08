@@ -61,6 +61,36 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         
     return {"etl_stats": stats}
 
+@router.get("/runs")
+async def get_runs(limit: int = 10, db: AsyncSession = Depends(get_db)):
+    """
+    Get recent ETL runs (Checkpoints) for P2.6.
+    """
+    query = select(EtlCheckpoint).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@router.get("/compare-runs")
+async def compare_runs(db: AsyncSession = Depends(get_db)):
+    """
+    Compare metrics across different data sources for P2.6.
+    """
+    result = await db.execute(select(EtlCheckpoint))
+    checkpoints = result.scalars().all()
+    
+    if not checkpoints:
+        return {"message": "No runs found to compare"}
+
+    comparison = {
+        "total_sources": len(checkpoints),
+        "successful_sources": sum(1 for cp in checkpoints if cp.last_status == "success"),
+        "failed_sources": sum(1 for cp in checkpoints if cp.last_status == "failure"),
+        "fastest_run_source": min(checkpoints, key=lambda x: x.run_duration_ms).source_name,
+        "slowest_run_source": max(checkpoints, key=lambda x: x.run_duration_ms).source_name,
+        "total_records": sum(cp.records_processed for cp in checkpoints)
+    }
+    return comparison
+
 from app.services.etl_service import trigger_etl_job
 
 @router.post("/etl/run")

@@ -40,6 +40,10 @@ jobs:
 
     - name: Run Tests
       env:
+        PYTHONPATH: .
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kasparro
       run: |
         pytest -v
+
+    - name: Build Docker Image
+      run: docker build . --file Dockerfile --tag kasparro-backend:latest
