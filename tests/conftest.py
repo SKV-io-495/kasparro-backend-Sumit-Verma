@@ -7,50 +7,31 @@ from app.core import database
 from app.db.models import Base, EtlCheckpoint, UnifiedData, RawData
 
 # 1. Session-Scoped Event Loop
+# Ensures a single loop for the whole test session (avoids "Task attached to different loop")
 @pytest.fixture(scope="session")
 def event_loop():
-    """
-    Creates a single event loop for the entire test session.
-    """
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 # 2. Session-Scoped Engine
+# Attached to the session loop
 @pytest.fixture(scope="session")
 async def db_engine():
-    """
-    Creates the SQLAlchemy AsyncEngine once per session.
-    """
     engine = create_async_engine(database.settings.DATABASE_URL, echo=True)
     yield engine
     await engine.dispose()
 
-# 3. Database Initialization (Create Tables)
-@pytest.fixture(scope="session", autouse=True)
-async def init_db(db_engine):
-    """
-    Creates tables before tests, drops them after.
-    """
-    async with db_engine.begin() as conn:
-        # Explicitly Create All Tables
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield
-    
-    async with db_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
-# 4. Function-Scoped Session Patch
+# 3. Function-Scoped DB Setup & Patch
+# We use one fixture to handle both patching and schema creation for each test.
+# This ensures strict ordering: Patch -> Create Tables -> Run Test -> Drop Tables -> Unpatch
 @pytest.fixture(scope="function", autouse=True)
-async def patch_db_manager(db_engine):
-    """
-    Overrides the global db_manager to use the test session-scoped engine.
-    """
+async def setup_test_db(db_engine):
+    # --- Snapshot Global State ---
     original_engine = database.db_manager._engine
     original_maker = database.db_manager._session_maker
     
+    # --- Patch Global Manager ---
     database.db_manager._engine = db_engine
     database.db_manager._session_maker = sessionmaker(
         bind=db_engine,
@@ -59,8 +40,18 @@ async def patch_db_manager(db_engine):
         autoflush=False,
     )
     
+    # --- Create Tables ---
+    # We do this for EVERY test to ensure a clean slate and no visibility issues.
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    
     yield
     
-    # Restore global state
+    # --- Cleanup Tables ---
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        
+    # --- Restore Global State ---
     database.db_manager._engine = original_engine
     database.db_manager._session_maker = original_maker
