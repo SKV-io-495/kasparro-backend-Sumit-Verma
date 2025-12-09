@@ -43,6 +43,7 @@ jobs:
         PYTHONPATH: .
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kasparro
       run: |
+        python -m app.init_db_script
         pytest -v
 
     - name: Build Docker Image

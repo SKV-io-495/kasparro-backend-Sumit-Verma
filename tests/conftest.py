@@ -40,17 +40,19 @@ async def setup_test_db(db_engine):
         autoflush=False,
     )
     
-    # --- Create Tables ---
-    # We do this for EVERY test to ensure a clean slate and no visibility issues.
+    # --- Truncate Tables (Clean State) ---
+    # We assume schema is created by app.init_db_script (CI) or locally.
+    # We just clean data between tests.
     async with db_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
     
     yield
     
-    # --- Cleanup Tables ---
+    # --- Cleanup (Optional: Truncate again) ---
     async with db_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
         
     # --- Restore Global State ---
     database.db_manager._engine = original_engine
