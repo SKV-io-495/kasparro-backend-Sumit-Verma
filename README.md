@@ -45,7 +45,7 @@ graph TD
         Ingestion -->|Fetch| Sources
         
         Ingestion --> Drift[Drift Detection]
-        Drift -->|Valid?| Schema[Normalization (Pydantic)]
+        Drift -->|Valid?| Schema["Normalization (Pydantic)"]
         
         Schema -->|Upsert| DB[(PostgreSQL)]
         
