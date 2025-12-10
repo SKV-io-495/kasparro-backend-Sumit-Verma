@@ -1,4 +1,5 @@
-# Kasparro ETL Backend - Senior Engineer Submission
+# Kasparro ETL Backend - Assignment
+### Submitted by : Sumit Kumar Verma
 
 **Status:** 🟢 Complete & Deployed  
 **Deployment:** Google Cloud Run (Serverless)  
@@ -6,6 +7,14 @@
 
 **Deployed-link** - [kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
 
+---
+### Deployment Artifact Location Note
+
+**The Docker image is managed in Google Artifact Registry (GAR) as a best practice for GCP-native deployments, rather than Docker Hub.**
+
+The full image path is: `us-central1-docker.pkg.dev/kasparro-etl-project/kasparro-repo/kasparro-backend:latest`
+
+This choice is made for security, performance, and seamless integration with Google Cloud Run.
 ---
 
 ## 🏗️ Architecture Overview
