@@ -4,6 +4,8 @@
 **Deployment:** Google Cloud Run (Serverless)  
 **CI/CD:** GitHub Actions (Automated Testing & Deployment)
 
+**Deployed-link** - [kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
+
 ---
 
 ## 🏗️ Architecture Overview
