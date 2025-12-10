@@ -27,6 +27,32 @@ This project implements a robust, scalable ETL pipeline using **Clean Architectu
 3.  **Storage Layer (`app/db`)**: Normalized data is upserted into PostgreSQL (Cloud SQL) with conflict resolution (idempotency).
 4.  **API Layer (`app/api`)**: A high-performance FastAPI interface provides access to data, metrics, and trigger controls.
 
+### Architecture Diagram
+```mermaid
+graph TD
+    subgraph Sources
+        API[Mock API]
+        CSV[CSV Files]
+        RSS[RSS Feeds]
+    end
+
+    subgraph "Kasparro ETL System"
+        Scheduler[Cloud Scheduler] -->|Trigger /etl/run| API_Gateway[FastAPI]
+        User[User/Client] -->|Query Data /data| API_Gateway
+        
+        API_Gateway -->|Async Task| Ingestion[Ingestion Layer]
+        
+        Ingestion -->|Fetch| Sources
+        
+        Ingestion --> Drift[Drift Detection]
+        Drift -->|Valid?| Schema[Normalization (Pydantic)]
+        
+        Schema -->|Upsert| DB[(PostgreSQL)]
+        
+        API_Gateway -->|Read| DB
+    end
+```
+
 ---
 
 ## 💪 Key Features (The "Flex" Section)

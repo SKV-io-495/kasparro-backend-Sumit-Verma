@@ -41,7 +41,7 @@ jobs:
     - name: Run Tests
       env:
         PYTHONPATH: .
-        DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kasparro
+        DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
       run: |
         python -m app.init_db_script
         pytest -v

@@ -3,7 +3,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "kasparro-etl"
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/kasparro_db"
+    DATABASE_URL: str
     
     # Feature Flags
     CHAOS_MODE: bool = False
