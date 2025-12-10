@@ -95,10 +95,10 @@ A GitHub Actions pipeline (`.github/workflows/ci.yml`) enforces quality:
 ### 1. Environment Setup
 Create a `.env` file in the root directory:
 ```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/kasparro
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=kasparro
+DATABASE_URL=postgresql+asyncpg://user:password@hostname:5432/dbname
+POSTGRES_USER=your_postgres_user
+POSTGRES_PASSWORD=your_postgres_password
+POSTGRES_DB=your_database_name
 CHAOS_MODE=False
 ```
 

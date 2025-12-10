@@ -14,9 +14,9 @@ jobs:
       db:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kasparro
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'postgres' }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'postgres' }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'kasparro' }}
         ports:
           - 5432:5432
         options: >-
