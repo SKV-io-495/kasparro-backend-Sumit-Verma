@@ -1,45 +1,46 @@
+"""
+Orchestrates async data fetching from CoinGecko/Paprika and handles normalization failures.
+This pipeline is the central nervous system of the ETL process, ensuring data integrity and resilience.
+"""
 import asyncio
-import csv
 import time
-# feedparser imported locally to avoid test collection errors
 import traceback
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from datetime import datetime
+from typing import List, Callable, Any
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-from prometheus_client import Counter, Histogram, Gauge
 
 from app.core.database import AsyncSessionLocal
-from app.db.models import RawData, UnifiedData, EtlCheckpoint
-from app.schemas.data import UnifiedDataCreate
+from app.db.models import CryptoMarketData, EtlCheckpoint
+from app.schemas.crypto import CryptoUnifiedData
 from app.core import config
 from app.core.logging_config import get_logger
 from app.services.drift_detection import detect_drift
 
+# Import new sources
+from app.ingestion.sources import coinpaprika, coingecko, csv_ingestor
+
 logger = get_logger("etl_pipeline")
 settings = config.get_settings()
 
-# --- Metrics ---
+# --- Metrics (Placeholder, keeping existing names or updating as needed) ---
+from prometheus_client import Counter, Histogram, Gauge
 ETL_RECORDS_PROCESSED = Counter('etl_records_processed_total', 'Total records processed', ['source'])
 ETL_RUN_DURATION = Histogram('etl_run_duration_seconds', 'ETL run duration', ['source'])
 ETL_JOB_STATUS = Gauge('etl_job_status', 'ETL job status (1=Success, 0=Fail)', ['source'])
 
 # --- Checkpoint Logic ---
 
-async def get_checkpoint(session, source_name: str) -> Optional[EtlCheckpoint]:
+async def get_checkpoint(session, source_name: str) -> EtlCheckpoint | None:
     result = await session.execute(
         select(EtlCheckpoint).where(EtlCheckpoint.source_name == source_name)
     )
     return result.scalars().first()
 
-async def update_checkpoint(session, source_name: str, status: str, records: int, duration: int, error: Optional[str] = None, last_ts: Optional[datetime] = None):
-    # Update Metrics
+async def update_checkpoint(session, source_name: str, status: str, records: int, duration: int, error: str | None = None, last_ts: datetime | None = None):
     ETL_JOB_STATUS.labels(source=source_name).set(1 if status == "success" else 0)
     
-    # Simple Select + Update/Insert
     result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == source_name))
     cp = result.scalars().first()
     
@@ -59,103 +60,10 @@ async def update_checkpoint(session, source_name: str, status: str, records: int
             last_ingested_timestamp=last_ts
         )
         session.add(cp)
-    
-    # We rely on caller to commit
-
-# --- Extraction Sources ---
-
-# Using exponential backoff to handle transient network spikes
-@retry(
-    stop=stop_after_attempt(5), 
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry_error_callback=lambda retry_state: logger.error("retry_failed", source="mock_api", attempts=retry_state.attempt_number)
-)
-async def fetch_mock_api_data() -> List[Dict[str, Any]]:
-    # Simulate partial failure for Retry testing?
-    # For now, standard mock.
-    await asyncio.sleep(0.5)
-    return [
-        {
-            "id": "api-101",
-            "device_name": "Sensor-X",
-            "read_at": datetime.now(timezone.utc).isoformat(),
-            "reading": "55.5",
-            "type": "temp"
-        },
-        {
-            "id": "api-102",
-            "device_name": "Sensor-Y",
-            "read_at": datetime.now(timezone.utc).isoformat(),
-            "reading": "60.2",
-            "type": "temp"
-        }
-    ]
-
-def read_csv_data(file_path: str = "data/source.csv") -> List[Dict[str, Any]]:
-    results = []
-    try:
-        with open(file_path, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                results.append(row)
-    except FileNotFoundError:
-        logger.warning("csv_not_found", path=file_path)
-    return results
-
-@retry(
-    stop=stop_after_attempt(5), 
-    wait=wait_exponential(multiplier=1, min=4, max=10)
-)
-async def fetch_rss_feed(url: str = "http://feeds.bbci.co.uk/news/rss.xml") -> List[Dict[str, Any]]:
-    import feedparser
-    # In real world, we would use aiohttp + feedparser
-    # Just returning mock to avoid network deps in container for now
-    return [
-        {
-            "link": "rss-001",
-            "title": "News Item 1",
-            "published": datetime.now(timezone.utc).isoformat(),
-            "summary": "Some news content",
-            "category": "news"
-        }
-    ]
-
-# --- Normalization ---
-
-def normalize_api_record(record: Dict[str, Any]) -> UnifiedDataCreate:
-    # Drift Check?
-    # Ideally checking against model is hard unless we map dict to source model first.
-    # We will do drift check in process_source using raw record keys.
-    return UnifiedDataCreate(
-        external_id=record["id"],
-        name=record["device_name"],
-        timestamp=datetime.fromisoformat(record["read_at"]),
-        value=record["reading"],
-        category=record["type"]
-    )
-
-def normalize_csv_record(record: Dict[str, Any]) -> UnifiedDataCreate:
-    return UnifiedDataCreate(
-        external_id=record["external_id"],
-        name=record["name"],
-        timestamp=datetime.now(timezone.utc), 
-        value=record["val"],
-        category=record["cat"]
-    )
-
-def normalize_rss_record(record: Dict[str, Any]) -> UnifiedDataCreate:
-    ts = datetime.fromisoformat(record["published"]) if "published" in record else datetime.now(timezone.utc)
-    return UnifiedDataCreate(
-        external_id=record["link"],
-        name=record["title"],
-        timestamp=ts,
-        value=record["summary"], # Mapping summary to value
-        category=record.get("category", "rss")
-    )
 
 # --- Loading ---
 
-async def process_source(source_name: str, fetch_func, normalize_func):
+async def process_source(source_name: str, fetch_func: Callable[[], List[CryptoUnifiedData]]):
     start_time = time.time()
     logger.info("etl_start", source=source_name)
     
@@ -166,83 +74,87 @@ async def process_source(source_name: str, fetch_func, normalize_func):
         
         try:
             # 2. Extract
-            raw_records = await asyncio.to_thread(fetch_func) if not asyncio.iscoroutinefunction(fetch_func) else await fetch_func()
+            # Run blocking functions in thread
+            if asyncio.iscoroutinefunction(fetch_func):
+                raw_records = await fetch_func()
+            else:
+                raw_records = await asyncio.to_thread(fetch_func)
+                
             logger.info("fetched_records", source=source_name, count=len(raw_records))
 
             # 3. Transform & Filter
             new_records = []
             max_ts = last_ingested
             
-            # Chaos Mode Counter
             processed_count = 0
             total_records = len(raw_records)
 
             for rec in raw_records:
                 try:
-                    # Drift Detection (on first record or sample)
+                    # Drift Detection (pass raw dict if possible, but here we intentionally get Pydantic model from fetch_func)
+                    # For drift detection to work effectively on *schema* changes, we usually need the raw dict.
+                    # Our fetch_funcs return List[CryptoUnifiedData] (normalized).
+                    # So drift/validation happened inside fetch_func.
+                    # We can skip strict drift check here or check against target model fields.
                     if processed_count == 0:
-                        # We guess the model based on normalize_func or pass it explicitly?
-                        # For now, skipping explicit drift model mapping for simplicity or inferring.
-                        # Real drift detection needs expected schema. 
-                        # We'll just log keys for now as a basic drift check.
-                        detect_drift(rec, UnifiedDataCreate, source_name) # Using Target model as proxy? No, source schema needed.
-                        # Ideally we pass SourceModel to process_source. 
+                        detect_drift(rec.model_dump(), CryptoUnifiedData, source_name)
 
-                    unified = normalize_func(rec)
-                    
-                    if last_ingested and unified.timestamp and unified.timestamp <= last_ingested:
+                    # Filter by timestamp if checkpoint exists
+                    # Note: UniqueConstraint handles duplicates, but skipping saves DB ops
+                    if last_ingested and rec.timestamp and rec.timestamp <= last_ingested:
                         continue
                         
-                    new_records.append(unified)
+                    new_records.append(rec)
                     processed_count += 1
 
                     # Chaos Injection
                     if settings.CHAOS_MODE and processed_count > (total_records / 2):
                         raise Exception("CHAOS_MODE_TRIGGERED: Simulated failure mid-stream")
                     
-                    if unified.timestamp:
-                        if max_ts is None or unified.timestamp > max_ts:
-                            max_ts = unified.timestamp
+                    if rec.timestamp:
+                        # naive vs aware check, ensure aware
+                        ts = rec.timestamp
+                        if max_ts is None or ts > max_ts:
+                            max_ts = ts
                             
                 except Exception as e:
-                    if "CHAOS" in str(e): raise e # Re-raise chaos
+                    if "CHAOS" in str(e): raise e
                     logger.warning("validation_error", source=source_name, error=str(e))
                     continue
 
             # 4. Load
             if new_records:
-                for unified_data in new_records:
-                    stmt = insert(UnifiedData).values(
-                        external_id=unified_data.external_id,
-                        name=unified_data.name,
-                        timestamp=unified_data.timestamp,
-                        value=unified_data.value,
-                        category=unified_data.category
+                for data in new_records:
+                    stmt = insert(CryptoMarketData).values(
+                        ticker=data.ticker,
+                        price_usd=data.price_usd,
+                        market_cap=data.market_cap,
+                        volume_24h=data.volume_24h,
+                        source=data.source,
+                        timestamp=data.timestamp
                     ).on_conflict_do_update(
-                        index_elements=['external_id'],
+                        # 'ON CONFLICT' clause prevents duplicates if the cron job overlaps with a previous run.
+                        # This ensures idempotency by updating existing records instead of failing.
+                        index_elements=['ticker', 'source', 'timestamp'], # Matching UniqueConstraint
                         set_={
-                            "name": unified_data.name,
-                            "timestamp": unified_data.timestamp,
-                            "value": unified_data.value,
-                            "category": unified_data.category
+                            "price_usd": data.price_usd,
+                            "market_cap": data.market_cap,
+                            "volume_24h": data.volume_24h
                         }
                     )
                     await session.execute(stmt)
             
             await session.commit()
             
-            # 5. Update Checkpoint Success
+            # 5. Update Checkpoint
             duration_ms = int((time.time() - start_time) * 1000)
-            duration_sec = duration_ms / 1000.0
-            
             await update_checkpoint(session, source_name, "success", len(new_records), duration_ms, last_ts=max_ts)
             await session.commit()
             
             logger.info("etl_success", source=source_name, records=len(new_records), duration_ms=duration_ms)
             
-            # Metrics Update
             ETL_RECORDS_PROCESSED.labels(source=source_name).inc(len(new_records))
-            ETL_RUN_DURATION.labels(source=source_name).observe(duration_sec)
+            ETL_RUN_DURATION.labels(source=source_name).observe(duration_ms / 1000.0)
 
         except Exception as e:
             await session.rollback()
@@ -253,11 +165,14 @@ async def process_source(source_name: str, fetch_func, normalize_func):
             await session.commit()
 
 async def run_etl():
-    logger.info("pipeline_start", phase=3)
+    logger.info("pipeline_start", phase=6)
     try:
-        await process_source("mock_api", fetch_mock_api_data, normalize_api_record)
-        await process_source("local_csv", read_csv_data, normalize_csv_record)
-        await process_source("rss_feed", fetch_rss_feed, normalize_rss_record)
+        # Run concurrently
+        await asyncio.gather(
+            process_source("coinpaprika", coinpaprika.fetch_data),
+            process_source("coingecko", coingecko.fetch_data),
+            process_source("csv_upload", csv_ingestor.read_csv_data)
+        )
     except Exception as e:
          logger.critical("pipeline_critical_failure", error=str(e))
     logger.info("pipeline_finish")

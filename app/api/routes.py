@@ -1,3 +1,7 @@
+"""
+Handles API requests for market data and ETL statistics.
+Serves as the gateway for the frontend dashboard to access normalized crypto metrics.
+"""
 import time
 import uuid
 from typing import List, Optional
@@ -8,24 +12,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.db.models import UnifiedData, EtlCheckpoint
-from app.schemas.data import UnifiedDataResponse, PaginatedResponse, MetaData
+from app.db.models import CryptoMarketData, EtlCheckpoint
+from app.schemas.crypto import CryptoUnifiedDataResponse
+from app.schemas.data import PaginatedResponse, MetaData
 
 router = APIRouter()
 
-@router.get("/data", response_model=PaginatedResponse[UnifiedDataResponse])
+@router.get("/data", response_model=PaginatedResponse[CryptoUnifiedDataResponse])
 async def get_data(
     request: Request,
     offset: int = 0,
     limit: int = 10,
-    category: Optional[str] = Query(None, description="Filter by category"),
+    ticker: Optional[str] = Query(None, description="Filter by ticker"),
     db: AsyncSession = Depends(get_db)
 ):
     start_time = time.time()
-    query = select(UnifiedData)
+    query = select(CryptoMarketData)
     
-    if category:
-        query = query.where(UnifiedData.category == category)
+    if ticker:
+        query = query.where(CryptoMarketData.ticker == ticker.upper())
     
     query = query.offset(offset).limit(limit)
     
@@ -64,34 +69,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/runs")
 async def get_runs(limit: int = 10, db: AsyncSession = Depends(get_db)):
     """
-    Get recent ETL runs (Checkpoints) for P2.6.
+    Get recent ETL runs (Checkpoints).
     """
     query = select(EtlCheckpoint).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
-@router.get("/compare-runs")
-async def compare_runs(db: AsyncSession = Depends(get_db)):
-    """
-    Compare metrics across different data sources for P2.6.
-    """
-    result = await db.execute(select(EtlCheckpoint))
-    checkpoints = result.scalars().all()
-    
-    if not checkpoints:
-        return {"message": "No runs found to compare"}
-
-    comparison = {
-        "total_sources": len(checkpoints),
-        "successful_sources": sum(1 for cp in checkpoints if cp.last_status == "success"),
-        "failed_sources": sum(1 for cp in checkpoints if cp.last_status == "failure"),
-        "fastest_run_source": min(checkpoints, key=lambda x: x.run_duration_ms).source_name,
-        "slowest_run_source": max(checkpoints, key=lambda x: x.run_duration_ms).source_name,
-        "total_records": sum(cp.records_processed for cp in checkpoints)
-    }
-    return comparison
-
-from app.services.etl_service import trigger_etl_job
+from app.ingestion.pipeline import run_etl
 
 @router.post("/etl/run")
 async def run_etl_job():
@@ -99,7 +83,11 @@ async def run_etl_job():
     Manually triggers the ETL pipeline.
     """
     try:
-        await trigger_etl_job()
-        return {"status": "triggered", "message": "ETL job started successfully"}
+        # Note: run_etl is async, we should await it if we want to wait for completion, 
+        # or use background task if we want it async. 
+        # The original code imported trigger_etl_job from services.etl_service which probably did it in bg?
+        # But here I'll just await it for simplicity as per request to "Check Smoke Test"
+        await run_etl()
+        return {"status": "triggered", "message": "ETL job completed"}
     except Exception as e:
         return {"status": "failed", "error": str(e)}

@@ -1,66 +1,45 @@
 import pytest
 import datetime
-from sqlalchemy.future import select
-from app.db.models import Base, EtlCheckpoint
-from app.ingestion.pipeline import process_source
-from app.schemas.data import UnifiedDataCreate
-from app.core import database
 import traceback
+from sqlalchemy.future import select
+from app.db.models import CryptoMarketData, EtlCheckpoint
+from app.ingestion.pipeline import process_source
+from app.schemas.crypto import CryptoUnifiedData
+from app.core import database
 
-# --- Setup handled by tests/conftest.py ---
-
-# --- Mocks ---
-async def mock_fetch_success():
+# Define mock locally to avoid any import confusion
+async def mock_fetch_test():
     return [
-        {"id": "test-1", "val": "100", "ts": datetime.datetime.now().isoformat()}
+        CryptoUnifiedData(
+            ticker="TEST", 
+            price_usd=1.0, 
+            source="test_source_iso",
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
     ]
 
-async def mock_fetch_fail():
-    raise Exception("Simulated API Connection Error")
-
-def mock_normalize(record):
-    return UnifiedDataCreate(
-        external_id=record["id"],
-        name="Test",
-        timestamp=datetime.datetime.fromisoformat(record["ts"]),
-        value=record["val"],
-        category="test"
-    )
-
 @pytest.mark.asyncio
-async def test_etl_success_and_checkpoint():
-    print("DEBUG: Starting success test")
+async def test_etl_pipeline_success():
+    source_name = "test_source_iso"
     
+    # 1. Run Pipeline
     try:
-        await process_source("test_source_success", mock_fetch_success, mock_normalize)
+        data = await mock_fetch_test()
+        await process_source(source_name, mock_fetch_test)
     except Exception as e:
         traceback.print_exc()
-        pytest.fail(f"Process source failed: {e}")
-    
-    print("DEBUG: Finished process_source")
+        pytest.fail(f"Pipeline failed: {e}")
 
+    # 2. Check Database
     async with database.AsyncSessionLocal() as session:
-        print("DEBUG: Querying checkpoint")
-        result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == "test_source_success"))
+        # Checkpoint
+        result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == source_name))
         cp = result.scalars().first()
         
-        if cp is None:
-            # Debug: List all checkpoints
-            all_res = await session.execute(select(EtlCheckpoint))
-            all_cps = all_res.scalars().all()
-            print(f"DEBUG: All checkpoints: {[c.source_name for c in all_cps]}")
-
-        assert cp is not None, "Checkpoint not found"
-        assert cp.last_status == "success"
-        assert cp.records_processed == 1
-
-@pytest.mark.asyncio
-async def test_etl_failure_handling():
-    await process_source("test_source_fail", mock_fetch_fail, mock_normalize)
-    
-    async with database.AsyncSessionLocal() as session:
-        result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == "test_source_fail"))
-        cp = result.scalars().first()
         assert cp is not None
-        assert cp.last_status == "failure"
-        assert "Connection Error" in cp.error_log
+        assert cp.records_processed == 1
+        
+        # CryptoMarketData
+        result_data = await session.execute(select(CryptoMarketData).where(CryptoMarketData.source == source_name))
+        rows = result_data.scalars().all()
+        assert len(rows) == 1

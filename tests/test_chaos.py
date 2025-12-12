@@ -4,7 +4,7 @@ import asyncio
 from sqlalchemy.future import select
 from app.db.models import Base, EtlCheckpoint
 from app.ingestion.pipeline import process_source
-from app.schemas.data import UnifiedDataCreate
+from app.schemas.crypto import CryptoUnifiedData
 from app.core import database, config
 
 # --- Setup ---
@@ -25,19 +25,16 @@ async def setup_db():
 async def mock_fetch_success():
     # Return enough records to trigger chaos (> 50%)
     # If 5 records, fail after 3.
+    now = datetime.datetime.now(datetime.timezone.utc)
     return [
-        {"id": f"chaos-{i}", "val": "100", "ts": datetime.datetime.now().isoformat()}
+        CryptoUnifiedData(
+            ticker=f"CHAOS-{i}",
+            price_usd=100.0,
+            source="chaos_source",
+            timestamp=now
+        )
         for i in range(5)
     ]
-
-def mock_normalize(record):
-    return UnifiedDataCreate(
-        external_id=record["id"],
-        name="Chaos Test",
-        timestamp=datetime.datetime.fromisoformat(record["ts"]),
-        value=record["val"],
-        category="test"
-    )
 
 @pytest.mark.asyncio
 async def test_chaos_recovery(monkeypatch):
@@ -54,7 +51,7 @@ async def test_chaos_recovery(monkeypatch):
     
     # 1. First Run (Chaotic)
     print("DEBUG: Running Chaos Iteration")
-    await process_source("chaos_source", mock_fetch_success, mock_normalize)
+    await process_source("chaos_source", mock_fetch_success)
     
     async with database.AsyncSessionLocal() as session:
         result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == "chaos_source"))
@@ -67,7 +64,7 @@ async def test_chaos_recovery(monkeypatch):
     print("DEBUG: Running Resumption Iteration")
     monkeypatch.setattr(settings, "CHAOS_MODE", False)
     
-    await process_source("chaos_source", mock_fetch_success, mock_normalize)
+    await process_source("chaos_source", mock_fetch_success)
     
     async with database.AsyncSessionLocal() as session:
         result = await session.execute(select(EtlCheckpoint).where(EtlCheckpoint.source_name == "chaos_source"))
@@ -75,5 +72,5 @@ async def test_chaos_recovery(monkeypatch):
         assert cp is not None
         assert cp.last_status == "success"
         assert cp.records_processed > 0
-        # In a real resume logic, we would skip duplicates.
-        # Our pipeline logic checks idempotency via ON CONFLICT.
+        # In a real resume logic, we would skip duplicates, but our mock_fetch returns same timestamps.
+        # Checkpoint uses ON CONFLICT DO UPDATE so it succeeds.

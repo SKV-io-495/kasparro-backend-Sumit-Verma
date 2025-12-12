@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core import database
 # Explicitly import all models so they are registered with Base.metadata
-from app.db.models import Base, EtlCheckpoint, UnifiedData, RawData
+from app.db.models import Base, EtlCheckpoint, CryptoMarketData, RawData
 
 # 1. Session-Scoped Event Loop
 # Ensures a single loop for the whole test session (avoids "Task attached to different loop")
@@ -44,7 +44,9 @@ async def setup_test_db(db_engine):
     # We assume schema is created by app.init_db_script (CI) or locally.
     # We just clean data between tests.
     async with db_engine.begin() as conn:
+        print(f"DEBUG: Tables to truncate: {list(Base.metadata.sorted_tables)}")
         for table in reversed(Base.metadata.sorted_tables):
+            print(f"DEBUG: Truncating {table.name}")
             await conn.execute(table.delete())
     
     yield
