@@ -1,7 +1,7 @@
 import asyncio
 import os
 from sqlalchemy.ext.asyncio import create_async_engine
-from app.db.models import Base, EtlCheckpoint, UnifiedData, RawData
+from app.db.models import Base, EtlCheckpoint, CryptoMarketData, RawData
 from app.core import database
 
 # Ensure DATABASE_URL is set (CI sets it, but fallback for safety)
