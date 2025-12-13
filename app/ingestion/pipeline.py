@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 
 from app.core.database import AsyncSessionLocal
-from app.db.models import CryptoMarketData, EtlCheckpoint
+from app.db.models import CryptoMarketData, EtlCheckpoint, RawData
 from app.schemas.crypto import CryptoUnifiedData
 from app.core import config
 from app.core.logging_config import get_logger
@@ -76,9 +76,12 @@ async def process_source(source_name: str, fetch_func: Callable[[], List[CryptoU
             # 2. Extract
             # Run blocking functions in thread
             if asyncio.iscoroutinefunction(fetch_func):
-                raw_records = await fetch_func()
+                raw_payload, raw_records = await fetch_func()
             else:
-                raw_records = await asyncio.to_thread(fetch_func)
+                raw_payload, raw_records = await asyncio.to_thread(fetch_func)
+            
+            # Save Raw Data (P0.1 Requirement)
+            session.add(RawData(source=source_name, payload=raw_payload))
                 
             logger.info("fetched_records", source=source_name, count=len(raw_records))
 

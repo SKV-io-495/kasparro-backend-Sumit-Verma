@@ -26,7 +26,7 @@ async def mock_fetch_success():
     # Return enough records to trigger chaos (> 50%)
     # If 5 records, fail after 3.
     now = datetime.datetime.now(datetime.timezone.utc)
-    return [
+    data_list = [
         CryptoUnifiedData(
             ticker=f"CHAOS-{i}",
             price_usd=100.0,
@@ -35,6 +35,7 @@ async def mock_fetch_success():
         )
         for i in range(5)
     ]
+    return {"raw_chaos": "true"}, data_list
 
 @pytest.mark.asyncio
 async def test_chaos_recovery(monkeypatch):

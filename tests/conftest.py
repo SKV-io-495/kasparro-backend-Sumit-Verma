@@ -1,61 +1,59 @@
 import pytest
 import asyncio
+from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core import database
-# Explicitly import all models so they are registered with Base.metadata
+# Explicit import to ensure metadata is populated
 from app.db.models import Base, EtlCheckpoint, CryptoMarketData, RawData
 
-# 1. Session-Scoped Event Loop
-# Ensures a single loop for the whole test session (avoids "Task attached to different loop")
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# 1. Function-Scoped Event Loop
+# Removed custom event_loop fixture; relying on pytest-asyncio 'auto' mode + pytest.ini configuration.
+# This prevents conflict with recent pytest-asyncio versions.
 
-# 2. Session-Scoped Engine
-# Attached to the session loop
-@pytest.fixture(scope="session")
+# 2. Function-Scoped Engine
+@pytest.fixture(scope="function")
 async def db_engine():
-    engine = create_async_engine(database.settings.DATABASE_URL, echo=True)
+    print("DEBUG: Creating DB Engine")
+    engine = create_async_engine(database.settings.DATABASE_URL, echo=False)
     yield engine
     await engine.dispose()
 
-# 3. Function-Scoped DB Setup & Patch
-# We use one fixture to handle both patching and schema creation for each test.
-# This ensures strict ordering: Patch -> Create Tables -> Run Test -> Drop Tables -> Unpatch
+# 3. Patch Startup Events (CRITICAL for AsyncClient)
+@pytest.fixture(scope="function", autouse=True)
+async def mock_startup_handlers():
+    # Prevent real init_db and trigger_etl_job from running during tests
+    # This avoids "Task attached to different loop" and DB conflicts
+    with patch("app.main.init_db", new_callable=AsyncMock) as mock_init, \
+         patch("app.main.trigger_etl_job", new_callable=AsyncMock) as mock_etl:
+        yield mock_init, mock_etl
+
+# 4. Function-Scoped DB Setup
 @pytest.fixture(scope="function", autouse=True)
 async def setup_test_db(db_engine):
-    # --- Snapshot Global State ---
+    # Snapshot global
     original_engine = database.db_manager._engine
     original_maker = database.db_manager._session_maker
     
-    # --- Patch Global Manager ---
+    # Patch global
     database.db_manager._engine = db_engine
     database.db_manager._session_maker = sessionmaker(
-        bind=db_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
+        bind=db_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
     )
     
-    # --- Truncate Tables (Clean State) ---
-    # We assume schema is created by app.init_db_script (CI) or locally.
-    # We just clean data between tests.
+    # NUCLEAR OPTION: DROP ALL then CREATE ALL
+    print("DEBUG: NUCLEAR CLEANUP STARTing")
     async with db_engine.begin() as conn:
-        print(f"DEBUG: Tables to truncate: {list(Base.metadata.sorted_tables)}")
-        for table in reversed(Base.metadata.sorted_tables):
-            print(f"DEBUG: Truncating {table.name}")
-            await conn.execute(table.delete())
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    print("DEBUG: NUCLEAR CLEANUP DONE")
     
     yield
     
-    # --- Cleanup (Optional: Truncate again) ---
+    # Cleanup after test
     async with db_engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            await conn.execute(table.delete())
+        await conn.run_sync(Base.metadata.drop_all)
         
-    # --- Restore Global State ---
+    # Restore global
     database.db_manager._engine = original_engine
     database.db_manager._session_maker = original_maker

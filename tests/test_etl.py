@@ -9,14 +9,17 @@ from app.core import database
 
 # Define mock locally to avoid any import confusion
 async def mock_fetch_test():
-    return [
-        CryptoUnifiedData(
-            ticker="TEST", 
-            price_usd=1.0, 
-            source="test_source_iso",
-            timestamp=datetime.datetime.now(datetime.timezone.utc)
-        )
-    ]
+    return (
+        {"mock_raw": "data"},
+        [
+            CryptoUnifiedData(
+                ticker="TEST", 
+                price_usd=1.0, 
+                source="test_source_iso",
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
+            )
+        ]
+    )
 
 @pytest.mark.asyncio
 async def test_etl_pipeline_success():

@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Tuple, Any
 from datetime import datetime, timezone
 from pycoingecko import CoinGeckoAPI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -15,9 +15,10 @@ logger = get_logger("etl_coingecko")
 )
 # Using tenacity here to handle CoinGecko's aggressive 429 rate limits without crashing the pipeline.
 # Retries with exponential backoff ensure we respect the API provider while maintaining data freshness.
-def fetch_data() -> List[CryptoUnifiedData]:
+def fetch_data() -> Tuple[Any, List[CryptoUnifiedData]]:
     """
     Fetches market data from CoinGecko and normalizes it.
+    Returns (raw_payload, normalized_data)
     """
     api_key = os.getenv("COINGECKO_API_KEY")
     
@@ -71,7 +72,7 @@ def fetch_data() -> List[CryptoUnifiedData]:
                 logger.warning("conversion_error", source="coingecko", ticker=m.get('symbol', 'unknown'), error=str(e))
                 continue
                 
-        return results
+        return markets, results
 
     except Exception as e:
         logger.error("fetch_error", source="coingecko", error=str(e))

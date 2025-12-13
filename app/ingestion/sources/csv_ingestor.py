@@ -1,6 +1,6 @@
 import csv
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from datetime import datetime, timezone
 
 from app.schemas.crypto import CryptoUnifiedData
@@ -8,12 +8,14 @@ from app.core.logging_config import get_logger
 
 logger = get_logger("etl_csv")
 
-def read_csv_data(file_path: str = "data/crypto_sample.csv") -> List[CryptoUnifiedData]:
+def read_csv_data(file_path: str = "data/crypto_sample.csv") -> Tuple[Any, List[CryptoUnifiedData]]:
     """
     Reads CSV with columns: symbol, price, date
     Normalizes to CryptoUnifiedData.
+    Returns (raw_rows_list, normalized_data)
     """
     results = []
+    raw_rows = []
     try:
         with open(file_path, mode='r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -21,12 +23,13 @@ def read_csv_data(file_path: str = "data/crypto_sample.csv") -> List[CryptoUnifi
             # Verify headers
             if not reader.fieldnames:
                 logger.warning("csv_empty_headers", path=file_path)
-                return []
+                return [], []
                 
             # Normalize headers to lowercase for safer checking if needed, 
             # but user specified symbol, price, date. We assume they match.
             
             for row in reader:
+                raw_rows.append(dict(row))
                 try:
                     # Expected columns: symbol, price, date
                     symbol = row.get("symbol")
@@ -64,7 +67,9 @@ def read_csv_data(file_path: str = "data/crypto_sample.csv") -> List[CryptoUnifi
                     
     except FileNotFoundError:
         logger.warning("csv_not_found", path=file_path)
+        return [], []
     except Exception as e:
         logger.error("csv_read_error", path=file_path, error=str(e))
+        return [], []
         
-    return results
+    return raw_rows, results

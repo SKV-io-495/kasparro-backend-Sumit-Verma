@@ -9,3 +9,4 @@ gcp_sa_key.json
 .pytest_cache/
 .coverage
 htmlcov/
+*.pdf

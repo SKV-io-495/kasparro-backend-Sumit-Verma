@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple, Any
 from datetime import datetime, timezone
 from coinpaprika import client as Coinpaprika
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -12,9 +12,10 @@ logger = get_logger("etl_coinpaprika")
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=4, max=10)
 )
-def fetch_data() -> List[CryptoUnifiedData]:
+def fetch_data() -> Tuple[Any, List[CryptoUnifiedData]]:
     """
     Fetches top 50 coins from CoinPaprika and normalizes them.
+    Returns (raw_payload, normalized_data)
     """
     client = Coinpaprika.Client()
     
@@ -70,7 +71,7 @@ def fetch_data() -> List[CryptoUnifiedData]:
                 logger.warning("conversion_error", source="coinpaprika", ticker=t.get('symbol', 'unknown'), error=str(e))
                 continue
                 
-        return results
+        return top_50, results
 
     except Exception as e:
         logger.error("fetch_error", source="coinpaprika", error=str(e))
