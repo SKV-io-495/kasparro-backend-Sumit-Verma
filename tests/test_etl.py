@@ -39,7 +39,19 @@ async def test_etl_pipeline_success():
         assert cp is not None
         assert cp.records_processed == 1
         
-        # CryptoMarketData
-        result_data = await session.execute(select(CryptoMarketData).where(CryptoMarketData.source == source_name))
+        # CryptoMarketData - Modified to check unified schema
+        # We search by ticker/time usually, but here let's validata metadata presence
+        result_data = await session.execute(
+            select(CryptoMarketData).where(CryptoMarketData.ticker == "TEST")
+        )
         rows = result_data.scalars().all()
-        assert len(rows) == 1
+        assert len(rows) >= 1
+        
+        # Verify our source is in the metadata of the matched record
+        found_source = False
+        for row in rows:
+            if row.sources_metadata and source_name in row.sources_metadata:
+                found_source = True
+                break
+        
+        assert found_source, f"Source {source_name} not found in CryptoMarketData metadata"

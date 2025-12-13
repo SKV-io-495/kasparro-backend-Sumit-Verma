@@ -122,27 +122,63 @@ async def process_source(source_name: str, fetch_func: Callable[[], List[CryptoU
                     logger.warning("validation_error", source=source_name, error=str(e))
                     continue
 
-            # 4. Load
+            # 4. Load (Unified Schema Logic)
             if new_records:
                 for data in new_records:
-                    stmt = insert(CryptoMarketData).values(
-                        ticker=data.ticker,
-                        price_usd=data.price_usd,
-                        market_cap=data.market_cap,
-                        volume_24h=data.volume_24h,
-                        source=data.source,
-                        timestamp=data.timestamp
-                    ).on_conflict_do_update(
-                        # 'ON CONFLICT' clause prevents duplicates if the cron job overlaps with a previous run.
-                        # This ensures idempotency by updating existing records instead of failing.
-                        index_elements=['ticker', 'source', 'timestamp'], # Matching UniqueConstraint
-                        set_={
-                            "price_usd": data.price_usd,
-                            "market_cap": data.market_cap,
-                            "volume_24h": data.volume_24h
-                        }
-                    )
-                    await session.execute(stmt)
+                    # Try to fetch existing record for this ticker/timestamp
+                    stmt = select(CryptoMarketData).where(
+                        CryptoMarketData.ticker == data.ticker,
+                        CryptoMarketData.timestamp == data.timestamp
+                    ).with_for_update()
+                    result = await session.execute(stmt)
+                    existing_record = result.scalars().first()
+
+                    # Data for specific source
+                    source_payload = {
+                        "price": data.price_usd,
+                        "market_cap": data.market_cap,
+                        "volume_24h": data.volume_24h
+                    }
+
+                    if existing_record:
+                        # --- MERGE STRATEGY ---
+                        # 1. Update Metadata
+                        # Copy existing to avoid mutation issues, though deepcopy implies safety
+                        current_meta = dict(existing_record.sources_metadata) if existing_record.sources_metadata else {}
+                        current_meta[data.source] = source_payload
+                        existing_record.sources_metadata = current_meta
+
+                        # 2. Recalculate Averages
+                        total_price = 0.0
+                        total_sources = 0
+                        
+                        for src, metrics in current_meta.items():
+                            if "price" in metrics:
+                                total_price += metrics["price"]
+                                total_sources += 1
+                        
+                        if total_sources > 0:
+                            existing_record.price_usd = total_price / total_sources
+                            # We could also average/sum market_cap and volume if needed, 
+                            # but Price is the critical unification metric.
+                            # For now, let's max() the others or keep latest (simple override)
+                            # Or better: Average volume? Volume is usually additive if sources are exchanges, 
+                            # but here sources are aggregators (CoinGecko vs CoinPaprika), so Averaging is safer to avoid double counting global volume.
+                            existing_record.volume_24h = data.volume_24h # Keep latest/fresh for now or implement avg
+                            existing_record.market_cap = data.market_cap
+
+                    else:
+                        # --- INSERT NEW ---
+                        new_meta = {data.source: source_payload}
+                        new_db_obj = CryptoMarketData(
+                            ticker=data.ticker,
+                            price_usd=data.price_usd,
+                            market_cap=data.market_cap,
+                            volume_24h=data.volume_24h,
+                            timestamp=data.timestamp,
+                            sources_metadata=new_meta
+                        )
+                        session.add(new_db_obj)
             
             await session.commit()
             

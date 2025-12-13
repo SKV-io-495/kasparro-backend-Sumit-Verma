@@ -17,14 +17,15 @@ class CryptoMarketData(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True, nullable=False)
-    price_usd = Column(Float, nullable=False) # Float for Decimal precision requirement (SQLAlchemy Float is usually adequate, but Numeric is safer for financial data. Instructions said float (Decimal precision preferred). Python float is what was asked in schema. In DB, Float is fine or Numeric.)
+    price_usd = Column(Float, nullable=False)
     market_cap = Column(Float, nullable=True)
     volume_24h = Column(Float, nullable=True)
-    source = Column(String, index=True, nullable=False)
+    # Source is now tracked in metadata to allow unification of multiple sources for the same ticker/time
+    sources_metadata = Column(JSON, nullable=True, default={})
     timestamp = Column(TIMESTAMP(timezone=True), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint('ticker', 'source', 'timestamp', name='uix_ticker_source_timestamp'),
+        UniqueConstraint('ticker', 'timestamp', name='uix_ticker_timestamp'),
     )
 
 class EtlCheckpoint(Base):

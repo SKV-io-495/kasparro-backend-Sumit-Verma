@@ -11,7 +11,7 @@ class CryptoUnifiedData(BaseModel):
     price_usd: float = Field(..., description="Price in USD")
     market_cap: Optional[float] = Field(None, description="Market Capitalization")
     volume_24h: Optional[float] = Field(None, description="24h Trading Volume")
-    source: str = Field(..., description="Source of data e.g. coinpaprika, coingecko")
+    source: str = Field("aggregated", description="Source of data e.g. coinpaprika, coingecko, or aggregated")
     timestamp: datetime = Field(..., description="Timestamp of the data")
 
     @validator('ticker')

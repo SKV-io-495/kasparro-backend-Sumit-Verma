@@ -5,7 +5,7 @@
 **Deployment:** Google Cloud Run (Serverless)  
 **CI/CD:** GitHub Actions (Automated Testing & Deployment)
 
-**Deployed-link** - [kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
+**Deployed-URL** - [kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
 
 ---
 ### Deployment Artifact Location Note
@@ -147,7 +147,7 @@ This repository is configured for **Zero-Touch Deployment**.
 
 ## 📡 API Documentation
 
-Once running (Local: `http://localhost:8000`, Prod: `https://[YOUR-CLOUD-RUN-URL]`), the following endpoints are available:
+Once running (Local: `http://localhost:8000/docs`, Prod: [Live API Docs](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)), the following endpoints are available:
 
 ### Core Data
 * `GET /health`: System health check (includes DB connectivity status and ETL last-run status).
