@@ -8,7 +8,11 @@ from app.core.logging_config import get_logger
 
 logger = get_logger("etl_csv")
 
-def read_csv_data(file_path: str = "data/crypto_sample.csv") -> Tuple[Any, List[CryptoUnifiedData]]:
+import os
+
+def read_csv_data(file_path: str = "data/source.csv") -> Tuple[Any, List[CryptoUnifiedData]]:
+    # Logic: Look for env var first, otherwise use argument (which defaults to data/source.csv)
+    file_path = os.getenv("CSV_SOURCE_PATH") or file_path
     """
     Reads CSV with columns: symbol, price, date
     Normalizes to CryptoUnifiedData.

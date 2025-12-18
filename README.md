@@ -1,3 +1,6 @@
+# ✨ Live Deployment
+[https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
+
 # Kasparro Backend Assignment - Cryptocurrency ETL Pipeline
 ### Submitted by : Sumit Kumar Verma
 
@@ -5,7 +8,6 @@
 **Deployment:** Google Cloud Run (Serverless)  
 **CI/CD:** GitHub Actions (Automated Testing & Deployment)
 
-**Deployed-URL** - [kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
 
 ---
 ### Deployment Artifact Location Note
@@ -162,5 +164,9 @@ Once running (Local: `http://localhost:8000/docs`, Prod: [Live API Docs](https:/
 * `POST /etl/run`: Manually trigger the ETL pipeline (used by Cloud Scheduler).
 
 ---
+
+## Infrastructure as Code
+The `terraform/` directory contains the definition for the existing `kasparro-etl-backend` service.
+
 
 _Built with ❤️ by Sumit Verma for Kasparro Evaluation._
