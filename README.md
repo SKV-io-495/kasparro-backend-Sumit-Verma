@@ -21,13 +21,15 @@ This choice is made for security, performance, and seamless integration with Goo
 ---
 ## 🏗️ Architecture Overview
 
-This project implements a robust, scalable ETL pipeline using **Clean Architecture** principles to ensure separation of concerns and testability. It aggregates real-time cryptocurrency market data from multiple disparate sources (CoinPaprika, CoinGecko, CSV file) into a unified analytical schema.
+This project implements a robust, scalable ETL pipeline using **Clean Architecture** principles. It aggregates real-time cryptocurrency market data from multiple disparate sources into a **Unified Analytical Schema**, ensuring a "Single Source of Truth" for every asset.
 
 ### The Pipeline Flow
-1.  **Ingestion Layer (`app/ingestion`)**: Data is fetched asynchronously from live APIs (CoinPaprika, CoinGecko) and legacy CSV imports.
-2.  **Normalization Layer (`app/schemas`)**: Raw payloads are validated and transformed into a strict `CryptoUnifiedData` schema using Pydantic.
-3.  **Storage Layer (`app/db`)**: Normalized data is upserted into PostgreSQL (Cloud SQL) with conflict resolution (**idempotency**) to handle duplicates.
-4.  **API Layer (`app/api`)**: A high-performance FastAPI interface provides access to market data, metrics, and trigger controls.
+1.  **Ingestion Layer (`app/ingestion`)**: Data is fetched asynchronously from APIs (CoinPaprika, CoinGecko) and CSVs. **Raw JSON payloads are immediately archived to the `raw_data` table** for full auditability (P0 Requirement).
+2.  **Normalization Layer (`app/schemas`)**: Data is transformed into the strict `CryptoUnifiedData` schema. The system uses a **Read-Modify-Write** strategy to aggregate prices from multiple sources into a single record.
+3.  **Storage Layer (`app/db`)**: Data is stored in PostgreSQL (Cloud SQL).
+    * **Raw Data:** Immutable log of all API responses.
+    * **Unified Data:** Unique `(ticker, timestamp)` constraint with a `sources_metadata` JSON column to track provenance.
+4.  **API Layer (`app/api`)**: A high-performance FastAPI interface exposing market data, health checks, and Prometheus metrics.
 
 ### Architecture Diagram
 ```mermaid
@@ -45,13 +47,14 @@ graph TD
         API_Gateway -->|Async Task| Ingestion[Ingestion Layer]
         
         Ingestion -->|Fetch Async| Sources
+        Ingestion -->|1. Archive Raw JSON| DB[(PostgreSQL)]
         
         Ingestion --> Drift[Drift Detection]
         Drift -->|Valid?| Schema["Normalization (Pydantic)"]
         
-        Schema -->|"Upsert (Idempotent)"| DB[(PostgreSQL)]
+        Schema -->|2. Merge & Aggregate| DB
         
-        API_Gateway -->|Read| DB
+        API_Gateway -->|Read Unified Data| DB
     end
 ```
 ---
