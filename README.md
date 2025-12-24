@@ -1,8 +1,7 @@
 # ✨ Live Deployment
 [https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/](https://kasparro-etl-backend-758785475066.us-central1.run.app/docs#/)
 
-# Kasparro Backend Assignment - Cryptocurrency ETL Pipeline
-### Submitted by : Sumit Kumar Verma
+# Kasparro: Real-time Cryptocurrency ETL Pipeline
 
 **Status:** 🟢 Complete & Deployed  
 **Deployment:** Google Cloud Run (Serverless)  
